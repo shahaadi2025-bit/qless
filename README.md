@@ -6,14 +6,19 @@ QLESS is a universal, full-stack queue infrastructure platform connecting physic
 
 ---
 
-## 🚀 Quick Start (Run Locally for Your College Presentation)
+## 🌐 Public Live URLs
 
-You can run the entire platform with one single command:
+* **Permanent 24/7 Deployed URL (Always Online)**:  
+  👉 **[https://shahaadi2025-bit.github.io/qless/](https://shahaadi2025-bit.github.io/qless/)**  
+  *(Works 24/7 from any device even if your laptop is turned off!)*
 
-```bash
-# In the root 'qless' folder:
-npm run dev
-```
+* **Real-Time Tunnel URL (When running locally with backend)**:  
+  👉 **[https://tennessee-contributed-sheep-meal.trycloudflare.com](https://tennessee-contributed-sheep-meal.trycloudflare.com)**
+
+* **Official GitHub Repository**:  
+  👉 **[https://github.com/shahaadi2025-bit/qless](https://github.com/shahaadi2025-bit/qless)**
+
+---
 
 This starts:
 1. **Backend Engine**: `http://localhost:5000` (Express + Socket.io + REST APIs)
