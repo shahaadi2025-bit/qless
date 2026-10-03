@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Search, 
   MapPin, 
@@ -13,6 +13,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
+import { venueArtDataUri } from '../venueArt.ts';
 
 interface ServiceItem {
   id: string;
@@ -47,9 +48,11 @@ interface CustomerHomeProps {
   locations: LocationCard[];
   onTokenIssued: (tokenData: any) => void;
   onViewMap: () => void;
+  openLocationId?: string | null;
 }
 
 export const CustomerHome: React.FC<CustomerHomeProps> = ({
+  openLocationId,
   locations,
   onTokenIssued,
   onViewMap
@@ -63,6 +66,17 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
   const [customerPhone, setCustomerPhone] = useState(user?.phone || '+91 98765 00001');
   const [customerName, setCustomerName] = useState(user?.full_name || 'Aadi Shah');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Open the join form when the map asks for it ("locationId|timestamp")
+  useEffect(() => {
+    if (!openLocationId) return;
+    const id = openLocationId.split('|')[0];
+    const loc = locations.find((l) => l.id === id);
+    if (loc) {
+      setActiveModalLocation(loc);
+      setSelectedService(loc.services && loc.services.length > 0 ? loc.services[0] : null);
+    }
+  }, [openLocationId]);
 
   // Filter locations
   const categories = [
@@ -231,7 +245,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
                 {/* Banner Thumbnail with Live Tag */}
                 <div className="relative h-44 w-full overflow-hidden">
                   <img
-                    src={loc.banner_url || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80'}
+                    src={loc.banner_url || venueArtDataUri(loc.category)}
                     alt={loc.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />

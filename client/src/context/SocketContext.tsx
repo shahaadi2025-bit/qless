@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { playQueueChime } from '../components/AudioChime.ts';
+import { playQueueChime, stopQueueSound, unmuteQueueSound } from '../components/AudioChime.ts';
 import { SOCKET_URL } from '../config.ts';
 
 interface SocketContextType {
@@ -43,7 +43,12 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setLastEvent(eventData);
 
       // If token is called, trigger sound chime
+      if (['TOKEN_SERVING', 'TOKEN_COMPLETED', 'TOKEN_NO_SHOW'].includes(eventData.type)) {
+        stopQueueSound();
+      }
+
       if (eventData.type === 'TOKEN_CALLED') {
+        unmuteQueueSound();
         playQueueChime(eventData.data?.announcement_text);
       }
     });

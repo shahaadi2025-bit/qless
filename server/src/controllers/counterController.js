@@ -7,6 +7,18 @@ export async function getCounterStationData(req, res) {
 
     const locId = location_id || 'loc-hosp-01';
     const location = mockStore.locations.find(l => l.id === locId);
+    // Every venue gets a default counter so staff can call tokens at any place, including discovered ones.
+    if (location && !mockStore.counters.some(c => c.location_id === locId)) {
+      mockStore.counters.push({
+        id: `cnt-${locId}-01`,
+        location_id: locId,
+        counter_number: 'Desk 01',
+        name: 'Main Counter',
+        status: 'OPEN',
+        current_staff_id: null,
+        active_token_id: null
+      });
+    }
     const counters = mockStore.counters.filter(c => c.location_id === locId);
     const services = mockStore.services.filter(s => s.location_id === locId);
 

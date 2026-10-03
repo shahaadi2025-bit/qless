@@ -11,6 +11,7 @@ import { BusinessAnalytics } from './components/BusinessAnalytics.tsx';
 import { useSocket } from './context/SocketContext.tsx';
 import { Database, HelpCircle, Sparkles, ExternalLink, Code2 } from 'lucide-react';
 import { apiFetch } from './config.ts';
+import { AuroraBackground } from './components/AuroraBackground.tsx';
 import { LocationPicker } from './components/LocationPicker.tsx';
 
 // Keep the list manageable when many nearby places are discovered: nearest N per category.
@@ -41,6 +42,7 @@ export const App: React.FC = () => {
   });
 
   const [showDemoModal, setShowDemoModal] = useState(false);
+  const [joinRequest, setJoinRequest] = useState<string | null>(null);
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number; label: string } | null>(() => {
     try {
       const raw = localStorage.getItem('qless:userLoc');
@@ -110,7 +112,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-dark-950 text-slate-100 flex flex-col selection:bg-brand-500/30 selection:text-brand-300">
+    <div className="relative isolate min-h-screen bg-dark-950 text-slate-100 flex flex-col selection:bg-brand-500/30 selection:text-brand-300">
+      <AuroraBackground />
       {/* Top Navigation */}
       <Navbar
         activeTab={activeTab}
@@ -148,6 +151,7 @@ export const App: React.FC = () => {
                 }}
               />
               <CustomerHome
+                openLocationId={joinRequest}
                 locations={locations}
                 onTokenIssued={handleTokenIssued}
                 onViewMap={() => {
@@ -171,10 +175,11 @@ export const App: React.FC = () => {
               </div>
 
               <InteractiveMap
+                userLocation={userLoc}
                 locations={locations}
                 onSelectLocation={(loc) => console.log('Selected loc', loc)}
                 onJoinQueue={(loc) => {
-                  // Pre-select and scroll up to join modal
+                  setJoinRequest(`${loc.id}|${Date.now()}`);
                   const el = document.getElementById('customer-home-view');
                   if (el) el.scrollIntoView({ behavior: 'smooth' });
                 }}
@@ -196,7 +201,23 @@ export const App: React.FC = () => {
         {/* Staff Counter Station */}
         {activeTab === 'counter' && (
           <div className="py-4">
-            <StaffCounterStation />
+            <div className="max-w-6xl mx-auto">
+              <LocationPicker
+                current={userLoc}
+                status={locStatus}
+                onChange={(loc) => {
+                  setUserLoc(loc);
+                  if (!loc) setLocStatus(null);
+                  try {
+                    if (loc) localStorage.setItem('qless:userLoc', JSON.stringify(loc));
+                    else localStorage.removeItem('qless:userLoc');
+                  } catch {
+                    /* storage unavailable */
+                  }
+                }}
+              />
+            </div>
+            <StaffCounterStation locations={locations} locationLabel={userLoc ? userLoc.label : undefined} />
           </div>
         )}
 

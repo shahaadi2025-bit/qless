@@ -156,6 +156,7 @@ function pruneOsm() {
   const orgIds = new Set(drop.map(l => l.org_id));
   mockStore.locations = mockStore.locations.filter(l => !ids.has(l.id));
   mockStore.services = mockStore.services.filter(s => !ids.has(s.location_id));
+  mockStore.counters = mockStore.counters.filter(c => !ids.has(c.location_id));
   mockStore.organizations = mockStore.organizations.filter(o => !orgIds.has(o.id));
 }
 

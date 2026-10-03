@@ -1,16 +1,9 @@
-import React, { useState } from 'react';
-import { 
-  MapPin, 
-  Navigation, 
-  Clock, 
-  Users, 
-  ShieldCheck, 
-  ExternalLink, 
-  Sparkles,
-  Search,
-  Filter,
-  ArrowRight
-} from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { Navigation, Users, Clock, ShieldCheck, Crosshair, Moon, Sun, ArrowRight, MapPin } from 'lucide-react';
+
+type WaitStatus = 'LOW_WAIT' | 'MEDIUM_WAIT' | 'HIGH_WAIT';
 
 interface LocationMarker {
   id: string;
@@ -27,253 +20,455 @@ interface LocationMarker {
   people_waiting: number;
   currently_serving: string;
   estimated_wait_minutes: number;
-  wait_status: 'LOW_WAIT' | 'MEDIUM_WAIT' | 'HIGH_WAIT';
+  wait_status: WaitStatus;
   is_verified: boolean;
   banner_url?: string;
   services: any[];
+}
+
+export interface MapUserLocation {
+  lat: number;
+  lng: number;
+  label: string;
 }
 
 interface InteractiveMapProps {
   locations: LocationMarker[];
   onSelectLocation: (location: LocationMarker) => void;
   onJoinQueue: (location: LocationMarker, serviceId?: string) => void;
+  userLocation?: MapUserLocation | null;
+}
+
+const STATUS_STYLE: Record<WaitStatus, { color: string; label: string; range: string }> = {
+  LOW_WAIT: { color: '#10b981', label: 'Low wait', range: 'under 15 min' },
+  MEDIUM_WAIT: { color: '#f59e0b', label: 'Medium wait', range: '15-35 min' },
+  HIGH_WAIT: { color: '#f43f5e', label: 'High wait', range: 'over 35 min' }
+};
+
+const CATEGORY_LABEL: Record<string, string> = {
+  ALL: 'All',
+  HEALTHCARE: 'Healthcare',
+  RESTAURANT: 'Dining',
+  RELIGIOUS: 'Temples',
+  BANKING: 'Banks',
+  SALON: 'Salons'
+};
+
+const MAP_CSS = `
+.qless-pin-wrap{background:transparent;border:0}
+.qless-pin{display:flex;align-items:center;justify-content:center;border-radius:9999px;border:3px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.45);color:#fff;font-weight:800;font-size:13px;transition:transform .15s}
+.qless-pin:hover{transform:scale(1.12)}
+.qless-pin-sel{box-shadow:0 0 0 6px rgba(99,102,241,.35),0 6px 18px rgba(0,0,0,.5)}
+.qless-map-dark .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.92) saturate(.8)}
+.qless-map .leaflet-container{font-family:inherit;background:#0f172a}
+.qless-map .leaflet-popup-content-wrapper{background:#0f172a;color:#e2e8f0;border-radius:14px;border:1px solid rgba(255,255,255,.12)}
+.qless-map .leaflet-popup-tip{background:#0f172a}
+.qless-map .leaflet-popup-content{margin:12px 14px;min-width:210px}
+.qless-popup-title{font-weight:800;font-size:14px;color:#fff;margin-bottom:2px}
+.qless-popup-meta{font-size:11px;color:#94a3b8;margin-bottom:6px}
+.qless-popup-wait{font-size:12px;font-weight:700;margin-bottom:8px}
+.qless-popup-actions{display:flex;gap:8px}
+.qless-popup-btn{flex:1;text-align:center;padding:7px 10px;border-radius:10px;font-size:11px;font-weight:700;cursor:pointer;border:0;text-decoration:none}
+.qless-popup-join{background:#6366f1;color:#fff}
+.qless-popup-dir{background:rgba(255,255,255,.1);color:#e2e8f0}
+.qless-map .leaflet-control-attribution{background:rgba(15,23,42,.75);color:#94a3b8;font-size:10px}
+.qless-map .leaflet-control-attribution a{color:#a5b4fc}
+.qless-map .leaflet-bar a{background:#0f172a;color:#e2e8f0;border-bottom:1px solid rgba(255,255,255,.12)}
+`;
+
+function makeIcon(loc: LocationMarker, selected: boolean): L.DivIcon {
+  const st = STATUS_STYLE[loc.wait_status] || STATUS_STYLE.LOW_WAIT;
+  const size = selected ? 46 : 36;
+  const waiting = Number(loc.people_waiting) || 0;
+  const html = `<div class="qless-pin${selected ? ' qless-pin-sel' : ''}" style="background:${st.color};width:${size}px;height:${size}px"><span>${waiting}</span></div>`;
+  return L.divIcon({ html, className: 'qless-pin-wrap', iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+}
+
+// Built with DOM nodes + textContent so place names from OpenStreetMap can never inject HTML.
+function buildPopup(loc: LocationMarker, onJoin: () => void): HTMLElement {
+  const st = STATUS_STYLE[loc.wait_status] || STATUS_STYLE.LOW_WAIT;
+  const root = document.createElement('div');
+
+  const title = document.createElement('div');
+  title.className = 'qless-popup-title';
+  title.textContent = loc.name;
+
+  const meta = document.createElement('div');
+  meta.className = 'qless-popup-meta';
+  meta.textContent = `${CATEGORY_LABEL[loc.category] || loc.category} - ${loc.distance_km} km away`;
+
+  const wait = document.createElement('div');
+  wait.className = 'qless-popup-wait';
+  wait.style.color = st.color;
+  wait.textContent = `${Number(loc.people_waiting) || 0} waiting - about ${Number(loc.estimated_wait_minutes) || 0} min`;
+
+  const actions = document.createElement('div');
+  actions.className = 'qless-popup-actions';
+
+  const join = document.createElement('button');
+  join.type = 'button';
+  join.className = 'qless-popup-btn qless-popup-join';
+  join.textContent = 'Join queue';
+  join.onclick = onJoin;
+
+  const dir = document.createElement('a');
+  dir.className = 'qless-popup-btn qless-popup-dir';
+  dir.href = `https://www.google.com/maps/dir/?api=1&destination=${Number(loc.latitude)},${Number(loc.longitude)}`;
+  dir.target = '_blank';
+  dir.rel = 'noopener noreferrer';
+  dir.textContent = 'Directions';
+
+  actions.appendChild(join);
+  actions.appendChild(dir);
+  root.appendChild(title);
+  root.appendChild(meta);
+  root.appendChild(wait);
+  root.appendChild(actions);
+  return root;
 }
 
 export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   locations,
   onSelectLocation,
-  onJoinQueue
+  onJoinQueue,
+  userLocation
 }) => {
-  const [selectedLoc, setSelectedLoc] = useState<LocationMarker | null>(locations[0] || null);
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'LOW_WAIT' | 'MEDIUM_WAIT' | 'HIGH_WAIT'>('ALL');
+  const mapDivRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const layerRef = useRef<L.LayerGroup | null>(null);
+  const userLayerRef = useRef<L.LayerGroup | null>(null);
+  const markersRef = useRef<Map<string, L.Marker>>(new Map());
 
-  // Filter locations based on wait status
-  const filtered = statusFilter === 'ALL' 
-    ? locations 
-    : locations.filter(l => l.wait_status === statusFilter);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | WaitStatus>('ALL');
+  const [category, setCategory] = useState('ALL');
+  const [dark, setDark] = useState(true);
 
-  // Status badge styling helper
-  const getBadgeStyle = (status: string) => {
-    switch (status) {
-      case 'LOW_WAIT':
-        return {
-          bg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-          dot: 'bg-emerald-400',
-          label: 'LOW WAIT (< 15m)'
-        };
-      case 'MEDIUM_WAIT':
-        return {
-          bg: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-          dot: 'bg-amber-400',
-          label: 'MEDIUM WAIT (15–35m)'
-        };
-      case 'HIGH_WAIT':
-        return {
-          bg: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
-          dot: 'bg-rose-400',
-          label: 'HIGH WAIT (> 35m)'
-        };
-      default:
-        return {
-          bg: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-          dot: 'bg-blue-400',
-          label: 'LIVE'
-        };
+  // Keep the latest callbacks/selection available to long-lived Leaflet handlers.
+  const joinRef = useRef(onJoinQueue);
+  const selectRef = useRef(onSelectLocation);
+  const selectedRef = useRef<string | null>(null);
+  joinRef.current = onJoinQueue;
+  selectRef.current = onSelectLocation;
+  selectedRef.current = selectedId;
+
+  // Normalise coordinates (MySQL can return DECIMAL columns as strings) and apply filters.
+  const normalised = useMemo(
+    () =>
+      locations
+        .map((l) => ({ ...l, latitude: Number(l.latitude), longitude: Number(l.longitude) }))
+        .filter((l) => Number.isFinite(l.latitude) && Number.isFinite(l.longitude)),
+    [locations]
+  );
+
+  const categories = useMemo(
+    () => ['ALL', ...Array.from(new Set(normalised.map((l) => l.category)))],
+    [normalised]
+  );
+
+  const visible = useMemo(
+    () =>
+      normalised.filter(
+        (l) =>
+          (statusFilter === 'ALL' || l.wait_status === statusFilter) &&
+          (category === 'ALL' || l.category === category)
+      ),
+    [normalised, statusFilter, category]
+  );
+
+  const byId = useMemo(() => {
+    const m = new Map<string, LocationMarker>();
+    visible.forEach((l) => m.set(l.id, l));
+    return m;
+  }, [visible]);
+
+  const focus = useMemo(
+    () => [...visible].sort((a, b) => a.distance_km - b.distance_km).slice(0, 25),
+    [visible]
+  );
+
+  const userKey = userLocation ? `${userLocation.lat},${userLocation.lng}` : '';
+  const markerKey = visible.map((l) => `${l.id}:${l.wait_status}:${l.people_waiting}`).join('|');
+  const fitKey = `${focus.map((l) => l.id).join(',')}@${userKey}`;
+
+  const counts = useMemo(() => {
+    const c = { ALL: normalised.length, LOW_WAIT: 0, MEDIUM_WAIT: 0, HIGH_WAIT: 0 };
+    normalised.forEach((l) => {
+      if (l.wait_status in c) c[l.wait_status] += 1;
+    });
+    return c;
+  }, [normalised]);
+
+  const fitToFocus = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.invalidateSize();
+    const pts: L.LatLngTuple[] = focus.map((l) => [l.latitude, l.longitude] as L.LatLngTuple);
+    if (userLocation) pts.push([userLocation.lat, userLocation.lng]);
+    if (pts.length === 0) return;
+    if (pts.length === 1) {
+      map.setView(pts[0], 15);
+    } else {
+      map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 16 });
     }
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Map Filter Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl glass-panel">
-        <div className="flex items-center gap-2">
-          <Navigation className="w-4 h-4 text-brand-400" />
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
-            Spatial Radar &amp; Live Wait Markers
-          </span>
-        </div>
+  // 1) Create the map once.
+  useEffect(() => {
+    if (!mapDivRef.current || mapRef.current) return;
+    const map = L.map(mapDivRef.current, { zoomControl: false }).setView([19.076, 72.8777], 12);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+    layerRef.current = L.layerGroup().addTo(map);
+    userLayerRef.current = L.layerGroup().addTo(map);
+    mapRef.current = map;
+    const t = window.setTimeout(() => map.invalidateSize(), 250);
+    return () => {
+      window.clearTimeout(t);
+      map.remove();
+      mapRef.current = null;
+      layerRef.current = null;
+      userLayerRef.current = null;
+      markersRef.current.clear();
+    };
+  }, []);
 
-        <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
-          <button
-            onClick={() => setStatusFilter('ALL')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
-              statusFilter === 'ALL' ? 'bg-white/15 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            All Live Markers ({locations.length})
-          </button>
-          <button
-            onClick={() => setStatusFilter('LOW_WAIT')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
-              statusFilter === 'LOW_WAIT' ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            Low Wait
-          </button>
-          <button
-            onClick={() => setStatusFilter('MEDIUM_WAIT')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
-              statusFilter === 'MEDIUM_WAIT' ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-            Medium Wait
-          </button>
-          <button
-            onClick={() => setStatusFilter('HIGH_WAIT')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
-              statusFilter === 'HIGH_WAIT' ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-rose-400"></span>
-            High Wait
-          </button>
+  // 2) Draw venue pins whenever the visible set (or its live numbers) changes.
+  useEffect(() => {
+    const group = layerRef.current;
+    if (!group) return;
+    group.clearLayers();
+    markersRef.current.clear();
+    visible.forEach((loc) => {
+      const marker = L.marker([loc.latitude, loc.longitude], {
+        icon: makeIcon(loc, loc.id === selectedRef.current),
+        title: loc.name,
+        riseOnHover: true
+      });
+      marker.bindPopup(() => buildPopup(loc, () => joinRef.current(loc)), {
+        closeButton: false,
+        offset: [0, -14]
+      });
+      marker.on('click', () => {
+        setSelectedId(loc.id);
+        selectRef.current(loc);
+      });
+      marker.addTo(group);
+      markersRef.current.set(loc.id, marker);
+    });
+    const sel = selectedRef.current ? markersRef.current.get(selectedRef.current) : undefined;
+    if (sel) sel.openPopup();
+  }, [markerKey]);
+
+  // 3) Draw the chosen location and its search radius.
+  useEffect(() => {
+    const g = userLayerRef.current;
+    if (!g) return;
+    g.clearLayers();
+    if (!userLocation) return;
+    const center: L.LatLngTuple = [userLocation.lat, userLocation.lng];
+    L.circle(center, {
+      radius: 2500,
+      color: '#6366f1',
+      weight: 1,
+      fillColor: '#6366f1',
+      fillOpacity: 0.08,
+      interactive: false
+    }).addTo(g);
+    L.circleMarker(center, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#3b82f6', fillOpacity: 1 })
+      .bindTooltip(userLocation.label || 'You are here', { direction: 'top' })
+      .addTo(g);
+  }, [userKey]);
+
+  // 4) Fit the view to the nearest places when the set of places or the location changes.
+  useEffect(() => {
+    fitToFocus();
+  }, [fitKey]);
+
+  // 5) Highlight, fly to and open the selected place; keep its card in view.
+  useEffect(() => {
+    markersRef.current.forEach((marker, id) => {
+      const loc = byId.get(id);
+      if (loc) marker.setIcon(makeIcon(loc, id === selectedId));
+    });
+    if (!selectedId) return;
+    const loc = byId.get(selectedId);
+    const marker = markersRef.current.get(selectedId);
+    const map = mapRef.current;
+    if (loc && marker && map) {
+      map.flyTo([loc.latitude, loc.longitude], Math.max(map.getZoom(), 15), { duration: 0.6 });
+      marker.openPopup();
+    }
+    const card = document.getElementById(`map-card-${selectedId}`);
+    if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedId]);
+
+  const select = (loc: LocationMarker) => {
+    setSelectedId(loc.id);
+    onSelectLocation(loc);
+  };
+
+  const statusFilters: Array<{ id: 'ALL' | WaitStatus; label: string; color?: string }> = [
+    { id: 'ALL', label: 'All' },
+    { id: 'LOW_WAIT', label: 'Low', color: STATUS_STYLE.LOW_WAIT.color },
+    { id: 'MEDIUM_WAIT', label: 'Medium', color: STATUS_STYLE.MEDIUM_WAIT.color },
+    { id: 'HIGH_WAIT', label: 'High', color: STATUS_STYLE.HIGH_WAIT.color }
+  ];
+
+  return (
+    <div className={`space-y-4 qless-map ${dark ? 'qless-map-dark' : ''}`}>
+      <style>{MAP_CSS}</style>
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl glass-panel">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <Navigation className="w-4 h-4 text-brand-400" />
+          <span className="font-bold text-white">{visible.length} places on the map</span>
+          {userLocation && <span className="text-slate-400">near {userLocation.label}</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-slate-500">Wait time:</span>
+          {statusFilters.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setStatusFilter(f.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
+                statusFilter === f.id
+                  ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25'
+                  : 'glass-card text-slate-300 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              {f.color && <span className="w-2 h-2 rounded-full" style={{ background: f.color }} />}
+              {f.label} ({counts[f.id]})
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Spatial Map Canvas Simulation */}
-      <div className="relative w-full h-[520px] rounded-3xl overflow-hidden glass-panel border border-white/10 bg-[#0c121e]">
-        {/* Stylized Vector Map Grid Background */}
-        <div 
-          className="absolute inset-0 opacity-20 pointer-events-none"
-          style={{
-            backgroundImage: `radial-gradient(#22c55e 1px, transparent 1px), linear-gradient(to right, #1e293b 1px, transparent 1px), linear-gradient(to bottom, #1e293b 1px, transparent 1px)`,
-            backgroundSize: '40px 40px, 120px 120px, 120px 120px'
-          }}
-        />
+      {/* Category pills */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+        {categories.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setCategory(c)}
+            className={`px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition-all ${
+              category === c
+                ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25'
+                : 'glass-panel text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            {CATEGORY_LABEL[c] || c}
+          </button>
+        ))}
+      </div>
 
-        {/* Map Radar Pulse Center (User Location Marker) */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center pointer-events-none">
-          <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center animate-ping"></div>
-          <div className="absolute top-2 w-6 h-6 rounded-full bg-blue-500 border-2 border-white flex items-center justify-center shadow-lg shadow-blue-500/50">
-            <span className="w-2 h-2 rounded-full bg-white"></span>
-          </div>
-          <span className="mt-8 px-2 py-0.5 rounded bg-dark-950/90 border border-white/20 text-[10px] font-mono text-blue-400">
-            📍 You Are Here
-          </span>
-        </div>
-
-        {/* Map Notice: Data Principle (Google Map vs QLESS Live Data) */}
-        <div className="absolute top-4 left-4 z-20 max-w-sm p-2.5 rounded-xl bg-dark-950/90 border border-white/10 text-[11px] text-slate-300 backdrop-blur-md hidden sm:block">
-          <p className="font-semibold text-white flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />
-            QLESS Verified Live Stream
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">
-            Map coordinates provide distance &amp; travel times. Queue counts and wait estimations are verified direct from QLESS-connected counters.
-          </p>
-        </div>
-
-        {/* Dynamic Venue Markers on Map */}
-        {filtered.map((loc, idx) => {
-          const badge = getBadgeStyle(loc.wait_status);
-          const isSelected = selectedLoc?.id === loc.id;
-
-          // Compute deterministic spatial placement around center
-          const angle = (idx / locations.length) * Math.PI * 2;
-          const radius = 130 + (idx % 3) * 45;
-          const leftPercent = 50 + (Math.cos(angle) * radius) / 5;
-          const topPercent = 50 + (Math.sin(angle) * radius) / 5.5;
-
-          return (
-            <div
-              key={loc.id}
-              style={{ left: `${leftPercent}%`, top: `${topPercent}%` }}
-              className="absolute z-20 transform -translate-x-1/2 -translate-y-1/2"
-            >
-              {/* Marker Pin */}
-              <button
-                onClick={() => {
-                  setSelectedLoc(loc);
-                  onSelectLocation(loc);
-                }}
-                className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-full border shadow-xl backdrop-blur-md transition-all duration-200 ${
-                  isSelected
-                    ? 'scale-110 ring-4 ring-brand-500/30 bg-dark-900 border-brand-400'
-                    : 'bg-dark-900/90 border-white/20 hover:scale-105 hover:border-brand-500'
-                }`}
-              >
-                <span className={`w-2.5 h-2.5 rounded-full ${badge.dot} ${isSelected ? 'animate-ping' : ''}`} />
-                <span className="text-xs font-bold text-white max-w-[120px] truncate">
-                  {loc.name.split(' - ')[0]}
-                </span>
-                <span className="text-[10px] font-mono text-brand-400">
-                  {loc.estimated_wait_minutes}m
-                </span>
-              </button>
-            </div>
-          );
-        })}
-
-        {/* Selected Venue Floating Details Drawer on Map */}
-        {selectedLoc && (
-          <div className="absolute bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-30 p-4 rounded-2xl glass-panel border border-brand-500/30 shadow-2xl animate-in slide-in-from-bottom-3 duration-200">
-            <div className="flex items-start justify-between gap-3 mb-2">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${getBadgeStyle(selectedLoc.wait_status).bg}`}>
-                    {getBadgeStyle(selectedLoc.wait_status).label}
-                  </span>
-                  {selectedLoc.is_verified && (
-                    <span className="text-[10px] font-semibold text-brand-400 flex items-center gap-0.5">
-                      <ShieldCheck className="w-3 h-3" /> Verified
+      <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+        {/* Venue list */}
+        <div className="order-2 lg:order-1 rounded-2xl glass-panel border border-white/10 overflow-hidden flex flex-col max-h-[420px] lg:max-h-[560px]">
+          <div className="overflow-y-auto divide-y divide-white/5">
+            {visible.length === 0 && (
+              <div className="p-6 text-center text-xs text-slate-400">
+                No places match these filters. Try another wait time or category, or choose a different location above.
+              </div>
+            )}
+            {visible.map((loc) => {
+              const st = STATUS_STYLE[loc.wait_status] || STATUS_STYLE.LOW_WAIT;
+              const active = loc.id === selectedId;
+              return (
+                <div
+                  key={loc.id}
+                  id={`map-card-${loc.id}`}
+                  onClick={() => select(loc)}
+                  className={`p-3 cursor-pointer transition-colors ${
+                    active ? 'bg-brand-500/15' : 'hover:bg-white/5'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-sm text-white truncate">{loc.name}</span>
+                        {loc.is_verified && <ShieldCheck className="w-3.5 h-3.5 text-brand-400 shrink-0" />}
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">
+                        <MapPin className="w-3 h-3 shrink-0" />
+                        {CATEGORY_LABEL[loc.category] || loc.category} - {loc.distance_km} km
+                      </p>
+                    </div>
+                    <span
+                      className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                      style={{ background: `${st.color}26`, color: st.color }}
+                    >
+                      {st.label}
                     </span>
-                  )}
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-slate-300">
+                    <span className="flex items-center gap-3">
+                      <span className="flex items-center gap-1">
+                        <Users className="w-3 h-3 text-brand-400" />
+                        {loc.people_waiting}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-brand-400" />~{loc.estimated_wait_minutes} min
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onJoinQueue(loc);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-bold"
+                    >
+                      Join <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
-                <h3 className="font-extrabold text-base text-white leading-tight">
-                  {selectedLoc.name}
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {selectedLoc.address}
-                </p>
-              </div>
-            </div>
-
-            {/* Real-time stats grid */}
-            <div className="grid grid-cols-3 gap-2 p-2.5 my-3 rounded-xl bg-dark-950/70 border border-white/5 text-center">
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase">Wait Time</span>
-                <p className="text-base font-extrabold text-brand-400 mt-0.5">
-                  ~{selectedLoc.estimated_wait_minutes} min
-                </p>
-              </div>
-              <div className="border-x border-white/10">
-                <span className="text-[10px] text-slate-400 uppercase">In Line</span>
-                <p className="text-base font-extrabold text-white mt-0.5">
-                  {selectedLoc.people_waiting}
-                </p>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase">Distance</span>
-                <p className="text-base font-extrabold text-slate-200 mt-0.5">
-                  {selectedLoc.distance_km} km
-                </p>
-              </div>
-            </div>
-
-            {/* Primary Action: Join Queue Button */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onJoinQueue(selectedLoc)}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-brand-500/20 hover:shadow-brand-500/40 transition-all"
-              >
-                Join Queue Now
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedLoc.name + ' ' + selectedLoc.address)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="p-2.5 rounded-xl glass-card hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs transition-colors"
-                title="Open in Google Maps for Navigation"
-              >
-                <ExternalLink className="w-4 h-4" />
-              </a>
-            </div>
+              );
+            })}
           </div>
-        )}
+        </div>
+
+        {/* Map */}
+        <div className="order-1 lg:order-2 relative rounded-2xl overflow-hidden border border-white/10 h-[360px] lg:h-[560px]">
+          <div ref={mapDivRef} className="absolute inset-0" />
+
+          <div className="absolute top-3 right-3 flex gap-2" style={{ zIndex: 1000 }}>
+            <button
+              type="button"
+              onClick={fitToFocus}
+              title="Recenter on nearby places"
+              className="w-9 h-9 rounded-xl glass-panel border border-white/15 text-slate-200 hover:text-white flex items-center justify-center"
+            >
+              <Crosshair className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setDark((d) => !d)}
+              title={dark ? 'Switch to light map' : 'Switch to dark map'}
+              className="w-9 h-9 rounded-xl glass-panel border border-white/15 text-slate-200 hover:text-white flex items-center justify-center"
+            >
+              {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </div>
+
+          <div
+            className="absolute bottom-3 left-3 px-3 py-2 rounded-xl glass-panel border border-white/15 text-[10px] text-slate-200 space-y-1"
+            style={{ zIndex: 1000 }}
+          >
+            {(Object.keys(STATUS_STYLE) as WaitStatus[]).map((k) => (
+              <div key={k} className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ background: STATUS_STYLE[k].color }} />
+                {STATUS_STYLE[k].label} ({STATUS_STYLE[k].range})
+              </div>
+            ))}
+            <div className="text-slate-400">Number on pin = people waiting</div>
+          </div>
+        </div>
       </div>
     </div>
   );

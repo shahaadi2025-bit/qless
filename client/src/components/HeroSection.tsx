@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { HeroIllustration } from './HeroIllustration.tsx';
 import { 
   ArrowRight, 
   Clock, 
@@ -326,6 +327,10 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             <Building2 className="w-4 h-4 text-slate-400" />
             For Businesses
           </button>
+        </div>
+
+        <div className="pt-8">
+          <HeroIllustration />
         </div>
 
         {/* Live Network Stats Strip */}

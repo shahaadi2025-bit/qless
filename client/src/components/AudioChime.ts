@@ -1,39 +1,88 @@
-// Web Audio API Chime & Speech Synthesizer for Staff Calling Station
-export function playQueueChime(announcementText?: string) {
-  try {
-    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContext) return;
+// Web Audio API chime + speech announcer with a global "stop" switch.
+// stopQueueSound() silences everything immediately and blocks further playback
+// until unmuteQueueSound() is called (done when the next token is called).
+let sharedCtx: AudioContext | null = null;
+let speechTimer: number | undefined;
+let muted = false;
+let lastKey = '';
+let lastAt = 0;
+let liveOscillators: OscillatorNode[] = [];
 
-    const ctx = new AudioContext();
+function getContext(): AudioContext | null {
+  const Ctor = window.AudioContext || (window as any).webkitAudioContext;
+  if (!Ctor) return null;
+  if (!sharedCtx || sharedCtx.state === 'closed') sharedCtx = new Ctor();
+  if (sharedCtx && sharedCtx.state === 'suspended') sharedCtx.resume().catch(() => undefined);
+  return sharedCtx;
+}
+
+function tone(ctx: AudioContext, freq: number, start: number, dur: number, vol: number) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, start);
+  gain.gain.setValueAtTime(vol, start);
+  gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.onended = () => {
+    liveOscillators = liveOscillators.filter((o) => o !== osc);
+  };
+  liveOscillators.push(osc);
+  osc.start(start);
+  osc.stop(start + dur);
+}
+
+/** Stop the chime and any spoken announcement right now, and keep quiet until unmuteQueueSound(). */
+export function stopQueueSound() {
+  muted = true;
+  if (speechTimer !== undefined) {
+    window.clearTimeout(speechTimer);
+    speechTimer = undefined;
+  }
+  try {
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  } catch {
+    /* ignore */
+  }
+  liveOscillators.forEach((o) => {
+    try {
+      o.stop();
+    } catch {
+      /* already stopped */
+    }
+  });
+  liveOscillators = [];
+}
+
+/** Allow sound again (call this when a new token is called). */
+export function unmuteQueueSound() {
+  muted = false;
+}
+
+export function playQueueChime(announcementText?: string) {
+  if (muted) return;
+
+  // Ignore an identical call made a moment ago (staff screen + socket event both fire for one call).
+  const key = announcementText || '';
+  const nowMs = Date.now();
+  if (key === lastKey && nowMs - lastAt < 2500) return;
+  lastKey = key;
+  lastAt = nowMs;
+
+  try {
+    const ctx = getContext();
+    if (!ctx) return;
     const now = ctx.currentTime;
 
-    // First tone (659.25 Hz - E5)
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(659.25, now);
-    gain1.gain.setValueAtTime(0.3, now);
-    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
-    osc1.start(now);
-    osc1.stop(now + 0.6);
+    tone(ctx, 659.25, now, 0.6, 0.3); // E5
+    tone(ctx, 880.0, now + 0.3, 0.9, 0.35); // A5
 
-    // Second tone (880 Hz - A5)
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(880.0, now + 0.3);
-    gain2.gain.setValueAtTime(0.35, now + 0.3);
-    gain2.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-    osc2.start(now + 0.3);
-    osc2.stop(now + 1.2);
-
-    // Optional text-to-speech voice announcement
     if (announcementText && 'speechSynthesis' in window) {
-      setTimeout(() => {
+      if (speechTimer !== undefined) window.clearTimeout(speechTimer);
+      speechTimer = window.setTimeout(() => {
+        speechTimer = undefined;
+        if (muted) return;
         const utterance = new SpeechSynthesisUtterance(announcementText);
         utterance.rate = 0.95;
         utterance.pitch = 1.05;
