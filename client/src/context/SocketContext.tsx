@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { playQueueChime } from '../components/AudioChime.ts';
+import { SOCKET_URL } from '../config.ts';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -20,8 +21,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [lastEvent, setLastEvent] = useState<any>(null);
 
   useEffect(() => {
-    // Connect to current origin (proxied by Vite to port 5000) or direct fallback
-    const socketInstance = io(window.location.origin, {
+    // Connect to dynamic socket URL (Render in cloud, localhost in development)
+    const socketInstance = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
       reconnectionDelay: 1000

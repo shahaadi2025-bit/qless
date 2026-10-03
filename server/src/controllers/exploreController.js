@@ -1,4 +1,5 @@
 import { getDbPool, isDbConnected, mockStore } from '../db.js';
+import { discoverNearby, osmLocationRows } from './placesController.js';
 
 // Haversine distance calculator in km
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -21,6 +22,14 @@ export async function getExploreLocations(req, res) {
     const uLat = parseFloat(userLat) || 18.9220; // default Mumbai reference
     const uLng = parseFloat(userLng) || 72.8347;
 
+    if (Number.isFinite(parseFloat(userLat)) && Number.isFinite(parseFloat(userLng))) {
+      // Real user location: pull in nearby real-world places (cached; capped at 6s so the page never hangs)
+      await Promise.race([
+        discoverNearby(parseFloat(userLat), parseFloat(userLng), 2500, 'ALL').catch(() => null),
+        new Promise(resolve => setTimeout(resolve, 6000))
+      ]);
+    }
+
     let locationsData = [];
 
     if (isDbConnected()) {
@@ -34,7 +43,7 @@ export async function getExploreLocations(req, res) {
         JOIN organizations o ON l.org_id = o.id
         WHERE l.is_active = TRUE
       `);
-      locationsData = rows;
+      locationsData = [...rows, ...osmLocationRows()];
     } else {
       // In-memory fallback
       locationsData = mockStore.locations.map(loc => {

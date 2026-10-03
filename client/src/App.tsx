@@ -10,6 +10,7 @@ import { KioskMode } from './components/KioskMode.tsx';
 import { BusinessAnalytics } from './components/BusinessAnalytics.tsx';
 import { useSocket } from './context/SocketContext.tsx';
 import { Database, HelpCircle, Sparkles, ExternalLink, Code2 } from 'lucide-react';
+import { apiFetch } from './config.ts';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('explore');
@@ -35,7 +36,7 @@ export const App: React.FC = () => {
   // Load verified locations
   const fetchLocations = async () => {
     try {
-      const res = await fetch('/api/explore/locations');
+      const res = await apiFetch('/api/explore/locations');
       const data = await res.json();
       if (data.success && data.data.length > 0) {
         setLocations(data.data);

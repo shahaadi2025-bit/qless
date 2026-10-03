@@ -1,29 +1,17 @@
 services:
-  # 1. QLESS Backend Service (Free Tier)
   - type: web
     name: qless-backend
-    env: node
+    runtime: node
     plan: free
+    region: singapore
     rootDir: server
     buildCommand: npm install
     startCommand: node src/server.js
+    healthCheckPath: /api/health
     envVars:
-      - key: PORT
-        value: 5000
       - key: NODE_ENV
         value: production
       - key: CLIENT_URL
-        value: "*"
-
-  # 2. QLESS Frontend Static Site (Free Global CDN)
-  - type: web
-    name: qless-frontend
-    env: static
-    plan: free
-    rootDir: client
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+        value: https://shahaadi2025-bit.github.io
+      - key: JWT_SECRET
+        generateValue: true
