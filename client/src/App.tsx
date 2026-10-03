@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { Navbar } from './components/Navbar.tsx';
 import { HeroSection } from './components/HeroSection.tsx';
@@ -50,15 +50,37 @@ export const App: React.FC = () => {
     }
   });
   const { lastEvent } = useSocket();
+  const discoveredRef = useRef<string>('');
+  const reqIdRef = useRef(0);
+  const [locStatus, setLocStatus] = useState<{ kind: 'loading' | 'ok' | 'warn'; text: string } | null>(null);
 
   // Load verified locations
   const fetchLocations = async () => {
+    const myReq = ++reqIdRef.current;
     try {
       const qs = userLoc ? `?userLat=${userLoc.lat}&userLng=${userLoc.lng}` : '';
+      if (userLoc) {
+        const key = `${userLoc.lat.toFixed(3)},${userLoc.lng.toFixed(3)}`;
+        if (discoveredRef.current !== key) {
+          setLocStatus({ kind: 'loading', text: `Finding places near ${userLoc.label}... (can take up to 30 seconds)` });
+          try {
+            const dr = await apiFetch(`/api/places/nearby?lat=${userLoc.lat}&lng=${userLoc.lng}&radius=2500`);
+            const dj = await dr.json();
+            if (dj && dj.success && !dj.stale) {
+              discoveredRef.current = key;
+              setLocStatus({ kind: 'ok', text: `Found ${dj.count} real places near ${userLoc.label}.` });
+            } else {
+              setLocStatus({ kind: 'warn', text: 'The live place lookup is busy right now. Pick the location again in a minute to retry.' });
+            }
+          } catch {
+            setLocStatus({ kind: 'warn', text: 'Could not reach the server (the free server may be waking up). Pick the location again in a minute.' });
+          }
+        }
+      }
       const res = await apiFetch(`/api/explore/locations${qs}`);
       const data = await res.json();
       if (data.success && data.data.length > 0) {
-        setLocations(userLoc ? capPerCategory(data.data) : data.data);
+        if (myReq === reqIdRef.current) setLocations(userLoc ? capPerCategory(data.data) : data.data);
       }
     } catch (err) {
       console.warn('Failed to load locations from API, keeping initial data');
@@ -113,8 +135,10 @@ export const App: React.FC = () => {
             <div id="customer-home-view" className="pt-6 border-t border-white/10">
               <LocationPicker
                 current={userLoc}
+                status={locStatus}
                 onChange={(loc) => {
                   setUserLoc(loc);
+                  if (!loc) setLocStatus(null);
                   try {
                     if (loc) localStorage.setItem('qless:userLoc', JSON.stringify(loc));
                     else localStorage.removeItem('qless:userLoc');

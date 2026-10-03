@@ -14,9 +14,15 @@ interface SearchHit {
   longitude: number;
 }
 
+export interface PickerStatus {
+  kind: 'loading' | 'ok' | 'warn';
+  text: string;
+}
+
 interface LocationPickerProps {
   current: PickedLocation | null;
   onChange: (loc: PickedLocation | null) => void;
+  status?: PickerStatus | null;
 }
 
 const QUICK_CITIES: PickedLocation[] = [
@@ -34,7 +40,7 @@ function shortLabel(name: string): string {
   return name.split(',').slice(0, 2).join(',').trim();
 }
 
-export const LocationPicker: React.FC<LocationPickerProps> = ({ current, onChange }) => {
+export const LocationPicker: React.FC<LocationPickerProps> = ({ current, onChange, status }) => {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [busy, setBusy] = useState<'gps' | 'search' | null>(null);
@@ -186,9 +192,20 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ current, onChang
         ))}
       </div>
 
+      {status && (
+        <p
+          className={`flex items-center gap-2 text-xs ${
+            status.kind === 'ok' ? 'text-emerald-400' : status.kind === 'warn' ? 'text-amber-400' : 'text-slate-300'
+          }`}
+        >
+          {status.kind === 'loading' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          {status.text}
+        </p>
+      )}
+
       {error && <p className="text-xs text-rose-400">{error}</p>}
       <p className="text-[10px] text-slate-500">
-        Nearby places come from OpenStreetMap contributors. The first search in a new area can take a few seconds.
+        Nearby places come from OpenStreetMap contributors. The first search in a new area can take up to 30 seconds.
       </p>
     </div>
   );
