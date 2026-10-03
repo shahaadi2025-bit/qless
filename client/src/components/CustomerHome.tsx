@@ -172,7 +172,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
               className="flex items-center gap-2 px-5 py-3.5 rounded-2xl glass-panel hover:bg-white/10 text-slate-200 hover:text-white border border-white/10 text-sm font-semibold transition-all whitespace-nowrap"
             >
               <MapPin className="w-4 h-4 text-emerald-400 animate-pulse" />
-              📍 Near You (Mumbai)
+              📍 Near You
             </button>
           </div>
         </div>

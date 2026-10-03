@@ -11,6 +11,16 @@ import { BusinessAnalytics } from './components/BusinessAnalytics.tsx';
 import { useSocket } from './context/SocketContext.tsx';
 import { Database, HelpCircle, Sparkles, ExternalLink, Code2 } from 'lucide-react';
 import { apiFetch } from './config.ts';
+import { LocationPicker } from './components/LocationPicker.tsx';
+
+// Keep the list manageable when many nearby places are discovered: nearest N per category.
+const capPerCategory = (rows: any[], perCategory = 12): any[] => {
+  const seen: Record<string, number> = {};
+  return rows.filter((r) => {
+    seen[r.category] = (seen[r.category] || 0) + 1;
+    return seen[r.category] <= perCategory;
+  });
+};
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('explore');
@@ -31,15 +41,24 @@ export const App: React.FC = () => {
   });
 
   const [showDemoModal, setShowDemoModal] = useState(false);
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number; label: string } | null>(() => {
+    try {
+      const raw = localStorage.getItem('qless:userLoc');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
   const { lastEvent } = useSocket();
 
   // Load verified locations
   const fetchLocations = async () => {
     try {
-      const res = await apiFetch('/api/explore/locations');
+      const qs = userLoc ? `?userLat=${userLoc.lat}&userLng=${userLoc.lng}` : '';
+      const res = await apiFetch(`/api/explore/locations${qs}`);
       const data = await res.json();
       if (data.success && data.data.length > 0) {
-        setLocations(data.data);
+        setLocations(userLoc ? capPerCategory(data.data) : data.data);
       }
     } catch (err) {
       console.warn('Failed to load locations from API, keeping initial data');
@@ -48,7 +67,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     fetchLocations();
-  }, []);
+  }, [userLoc]);
 
   // Update on socket queue events
   useEffect(() => {
@@ -92,6 +111,18 @@ export const App: React.FC = () => {
 
             {/* Customer Home Discovery (Live Near You) */}
             <div id="customer-home-view" className="pt-6 border-t border-white/10">
+              <LocationPicker
+                current={userLoc}
+                onChange={(loc) => {
+                  setUserLoc(loc);
+                  try {
+                    if (loc) localStorage.setItem('qless:userLoc', JSON.stringify(loc));
+                    else localStorage.removeItem('qless:userLoc');
+                  } catch {
+                    /* storage unavailable */
+                  }
+                }}
+              />
               <CustomerHome
                 locations={locations}
                 onTokenIssued={handleTokenIssued}
