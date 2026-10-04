@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 import { MapPin, Navigation, Search, X, Loader2 } from 'lucide-react';
 import { apiFetch } from '../config.ts';
+import { reverseLabel } from '../geo.ts';
 
 export interface PickedLocation {
   lat: number;
   lng: number;
   label: string;
+  accuracy?: number;
 }
 
 interface SearchHit {
   name: string;
+  label?: string;
+  kind?: string;
   latitude: number;
   longitude: number;
 }
@@ -45,11 +49,13 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ current, onChang
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [busy, setBusy] = useState<'gps' | 'search' | null>(null);
   const [error, setError] = useState('');
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
 
   const choose = (loc: PickedLocation | null) => {
     setHits([]);
     setQuery('');
     setError('');
+    setGpsAccuracy(null);
     onChange(loc);
   };
 
@@ -61,9 +67,12 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ current, onChang
     }
     setBusy('gps');
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        const label = await reverseLabel(latitude, longitude);
         setBusy(null);
-        choose({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'My current location' });
+        choose({ lat: latitude, lng: longitude, label, accuracy: Math.round(accuracy) });
+        setGpsAccuracy(Math.round(accuracy));
       },
       (err) => {
         setBusy(null);
@@ -73,7 +82,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ current, onChang
             : 'Could not get your location. Type an area below or pick a city.'
         );
       },
-      { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
   };
 
@@ -144,7 +153,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ current, onChang
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Or type an area, e.g. Andheri, Mumbai"
+            placeholder="Type any area or place, e.g. Andheri, or Kokilaben Hospital"
             className="flex-1 px-3 py-2.5 rounded-xl glass-card text-white placeholder:text-slate-500 text-xs border border-white/10 focus:border-brand-500 focus:outline-none"
           />
           <button
@@ -164,10 +173,17 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ current, onChang
             <li key={`${h.latitude}-${h.longitude}-${i}`}>
               <button
                 type="button"
-                onClick={() => choose({ lat: h.latitude, lng: h.longitude, label: shortLabel(h.name) })}
-                className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-white/10"
+                onClick={() => choose({ lat: h.latitude, lng: h.longitude, label: h.label || shortLabel(h.name) })}
+                className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-white/10 flex items-start gap-2"
               >
-                {h.name}
+                <span
+                  className={`shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                    h.kind === 'place' ? 'bg-brand-500/25 text-brand-300' : 'bg-white/10 text-slate-300'
+                  }`}
+                >
+                  {h.kind === 'place' ? 'PLACE' : 'AREA'}
+                </span>
+                <span>{h.name}</span>
               </button>
             </li>
           ))}
@@ -201,6 +217,16 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ current, onChang
           {status.kind === 'loading' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {status.text}
         </p>
+      )}
+
+      {gpsAccuracy !== null && gpsAccuracy > 1000 && (
+        <p className="text-xs text-amber-400">
+          Your device located you only roughly (within about {(gpsAccuracy / 1000).toFixed(1)} km), so the area may be
+          off. Search your exact area above, or press "Pin on map" on the map to place it yourself.
+        </p>
+      )}
+      {gpsAccuracy !== null && gpsAccuracy <= 1000 && (
+        <p className="text-xs text-emerald-400">Location found (accurate to about {gpsAccuracy} m).</p>
       )}
 
       {error && <p className="text-xs text-rose-400">{error}</p>}

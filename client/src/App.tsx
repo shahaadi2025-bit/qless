@@ -15,7 +15,7 @@ import { AuroraBackground } from './components/AuroraBackground.tsx';
 import { LocationPicker } from './components/LocationPicker.tsx';
 
 // Keep the list manageable when many nearby places are discovered: nearest N per category.
-const capPerCategory = (rows: any[], perCategory = 12): any[] => {
+const capPerCategory = (rows: any[], perCategory = 24): any[] => {
   const seen: Record<string, number> = {};
   return rows.filter((r) => {
     seen[r.category] = (seen[r.category] || 0) + 1;

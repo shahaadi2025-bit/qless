@@ -13,6 +13,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
+import { PlaceImg } from './PlaceImg.tsx';
 import { venueArtDataUri } from '../venueArt.ts';
 
 interface ServiceItem {
@@ -244,7 +245,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
               >
                 {/* Banner Thumbnail with Live Tag */}
                 <div className="relative h-44 w-full overflow-hidden">
-                  <img
+                  <PlaceImg loc={loc}
                     src={loc.banner_url || venueArtDataUri(loc.category)}
                     alt={loc.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"

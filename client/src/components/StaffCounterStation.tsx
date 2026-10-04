@@ -42,6 +42,17 @@ const FALLBACK_VENUES: VenueOption[] = [
 const CATEGORY_LABEL: Record<string, string> = {
   HEALTHCARE: 'Healthcare',
   RESTAURANT: 'Dining',
+  PHARMACY: 'Pharmacies',
+  EDUCATION: 'Colleges & Schools',
+  GOVERNMENT: 'Government',
+  SHOPPING: 'Shopping',
+  TRANSPORT: 'Transport',
+  ENTERTAINMENT: 'Entertainment',
+  FUEL: 'Fuel',
+  LODGING: 'Hotels',
+  LEISURE: 'Parks & Gyms',
+  ATTRACTION: 'Attractions',
+  SERVICES: 'Other Places',
   RELIGIOUS: 'Temple',
   BANKING: 'Bank',
   SALON: 'Salon'

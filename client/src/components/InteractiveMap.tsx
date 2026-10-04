@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Navigation, Users, Clock, ShieldCheck, Crosshair, Moon, Sun, ArrowRight, MapPin } from 'lucide-react';
+import { PlaceImg } from './PlaceImg.tsx';
+import { fetchPlaceImage } from '../placeImages.ts';
+import { venueArtDataUri } from '../venueArt.ts';
+import { CATEGORY_LABELS } from '../categories.ts';
 
 type WaitStatus = 'LOW_WAIT' | 'MEDIUM_WAIT' | 'HIGH_WAIT';
 
@@ -37,6 +41,7 @@ interface InteractiveMapProps {
   onSelectLocation: (location: LocationMarker) => void;
   onJoinQueue: (location: LocationMarker, serviceId?: string) => void;
   userLocation?: MapUserLocation | null;
+  onPickLocation?: (lat: number, lng: number) => void;
 }
 
 const STATUS_STYLE: Record<WaitStatus, { color: string; label: string; range: string }> = {
@@ -47,11 +52,7 @@ const STATUS_STYLE: Record<WaitStatus, { color: string; label: string; range: st
 
 const CATEGORY_LABEL: Record<string, string> = {
   ALL: 'All',
-  HEALTHCARE: 'Healthcare',
-  RESTAURANT: 'Dining',
-  RELIGIOUS: 'Temples',
-  BANKING: 'Banks',
-  SALON: 'Salons'
+  ...CATEGORY_LABELS
 };
 
 const MAP_CSS = `
@@ -64,6 +65,7 @@ const MAP_CSS = `
 .qless-map .leaflet-popup-content-wrapper{background:#0f172a;color:#e2e8f0;border-radius:14px;border:1px solid rgba(255,255,255,.12)}
 .qless-map .leaflet-popup-tip{background:#0f172a}
 .qless-map .leaflet-popup-content{margin:12px 14px;min-width:210px}
+.qless-popup-photo{display:block;width:100%;height:110px;object-fit:cover;border-radius:10px;margin-bottom:8px;background:#1e293b}
 .qless-popup-title{font-weight:800;font-size:14px;color:#fff;margin-bottom:2px}
 .qless-popup-meta{font-size:11px;color:#94a3b8;margin-bottom:6px}
 .qless-popup-wait{font-size:12px;font-weight:700;margin-bottom:8px}
@@ -73,6 +75,7 @@ const MAP_CSS = `
 .qless-popup-dir{background:rgba(255,255,255,.1);color:#e2e8f0}
 .qless-map .leaflet-control-attribution{background:rgba(15,23,42,.75);color:#94a3b8;font-size:10px}
 .qless-map .leaflet-control-attribution a{color:#a5b4fc}
+.qless-pin-mode .leaflet-container,.qless-pin-mode .leaflet-grab,.qless-pin-mode .leaflet-interactive{cursor:crosshair !important}
 .qless-map .leaflet-bar a{background:#0f172a;color:#e2e8f0;border-bottom:1px solid rgba(255,255,255,.12)}
 `;
 
@@ -88,6 +91,22 @@ function makeIcon(loc: LocationMarker, selected: boolean): L.DivIcon {
 function buildPopup(loc: LocationMarker, onJoin: () => void): HTMLElement {
   const st = STATUS_STYLE[loc.wait_status] || STATUS_STYLE.LOW_WAIT;
   const root = document.createElement('div');
+
+  const photo = document.createElement('img');
+  photo.className = 'qless-popup-photo';
+  const art = venueArtDataUri(loc.category);
+  photo.src = loc.banner_url || art;
+  photo.alt = loc.name;
+  photo.onerror = () => {
+    photo.onerror = null;
+    photo.src = art;
+  };
+  if (String(loc.id).startsWith('osm-') && !loc.banner_url) {
+    fetchPlaceImage(loc.id).then((info) => {
+      if (info) photo.src = info.url;
+    });
+  }
+  root.appendChild(photo);
 
   const title = document.createElement('div');
   title.className = 'qless-popup-title';
@@ -131,7 +150,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   locations,
   onSelectLocation,
   onJoinQueue,
-  userLocation
+  userLocation,
+  onPickLocation
 }) => {
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -143,6 +163,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | WaitStatus>('ALL');
   const [category, setCategory] = useState('ALL');
   const [dark, setDark] = useState(true);
+  const [pinMode, setPinMode] = useState(false);
 
   // Keep the latest callbacks/selection available to long-lived Leaflet handlers.
   const joinRef = useRef(onJoinQueue);
@@ -151,6 +172,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   joinRef.current = onJoinQueue;
   selectRef.current = onSelectLocation;
   selectedRef.current = selectedId;
+  const pinModeRef = useRef(false);
+  const pickRef = useRef(onPickLocation);
+  pinModeRef.current = pinMode;
+  pickRef.current = onPickLocation;
 
   // Normalise coordinates (MySQL can return DECIMAL columns as strings) and apply filters.
   const normalised = useMemo(
@@ -225,6 +250,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     layerRef.current = L.layerGroup().addTo(map);
     userLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      if (!pinModeRef.current || !pickRef.current) return;
+      pickRef.current(e.latlng.lat, e.latlng.lng);
+      setPinMode(false);
+    });
     const t = window.setTimeout(() => map.invalidateSize(), 250);
     return () => {
       window.clearTimeout(t);
@@ -319,7 +349,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   ];
 
   return (
-    <div className={`space-y-4 qless-map ${dark ? 'qless-map-dark' : ''}`}>
+    <div className={`space-y-4 qless-map ${dark ? 'qless-map-dark' : ''}${pinMode ? ' qless-pin-mode' : ''}`}>
       <style>{MAP_CSS}</style>
 
       {/* Filter bar */}
@@ -388,8 +418,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     active ? 'bg-brand-500/15' : 'hover:bg-white/5'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
+                  <div className="flex items-start gap-3">
+                    <div className="relative w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-dark-800">
+                      <PlaceImg
+                        loc={loc}
+                        src={loc.banner_url || venueArtDataUri(loc.category)}
+                        alt={loc.name}
+                        className="w-full h-full object-cover"
+                        showCredit={false}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-sm text-white truncate">{loc.name}</span>
                         {loc.is_verified && <ShieldCheck className="w-3.5 h-3.5 text-brand-400 shrink-0" />}
@@ -437,7 +476,29 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         <div className="order-1 lg:order-2 relative rounded-2xl overflow-hidden border border-white/10 h-[360px] lg:h-[560px]">
           <div ref={mapDivRef} className="absolute inset-0" />
 
+          {pinMode && (
+            <div
+              className="absolute top-3 left-3 px-3 py-2 rounded-xl glass-panel border border-brand-500/50 text-xs font-semibold text-white"
+              style={{ zIndex: 1000 }}
+            >
+              Click anywhere on the map to set your location
+            </div>
+          )}
+
           <div className="absolute top-3 right-3 flex gap-2" style={{ zIndex: 1000 }}>
+            {onPickLocation && (
+              <button
+                type="button"
+                onClick={() => setPinMode((p) => !p)}
+                title="Click the map to set your location"
+                className={`h-9 px-3 rounded-xl glass-panel border text-xs font-bold flex items-center gap-1.5 ${
+                  pinMode ? 'border-brand-500 text-brand-300' : 'border-white/15 text-slate-200 hover:text-white'
+                }`}
+              >
+                <MapPin className="w-4 h-4" />
+                {pinMode ? 'Cancel pin' : 'Pin on map'}
+              </button>
+            )}
             <button
               type="button"
               onClick={fitToFocus}
