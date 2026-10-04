@@ -6,6 +6,7 @@ import { PlaceImg } from './PlaceImg.tsx';
 import { fetchPlaceImage } from '../placeImages.ts';
 import { venueArtDataUri } from '../venueArt.ts';
 import { CATEGORY_LABELS } from '../categories.ts';
+import { aerialLayout, AERIAL_ENABLED, AERIAL_CREDIT } from '../aerial.ts';
 
 type WaitStatus = 'LOW_WAIT' | 'MEDIUM_WAIT' | 'HIGH_WAIT';
 
@@ -87,6 +88,44 @@ function makeIcon(loc: LocationMarker, selected: boolean): L.DivIcon {
   return L.divIcon({ html, className: 'qless-pin-wrap', iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
 
+// Satellite view for the popup when no photo exists (plain DOM, like the rest of the popup).
+function buildAerial(lat: number, lng: number, color: string): HTMLElement {
+  const layout = aerialLayout(lat, lng);
+  const box = document.createElement('div');
+  box.className = 'qless-popup-photo';
+  box.style.position = 'relative';
+  box.style.overflow = 'hidden';
+
+  const grid = document.createElement('div');
+  grid.style.cssText =
+    `position:absolute;left:50%;top:50%;width:768px;height:768px;margin-left:${-layout.offsetX}px;margin-top:${-layout.offsetY}px`;
+  layout.tiles.forEach((t) => {
+    const im = document.createElement('img');
+    im.src = t.url;
+    im.alt = '';
+    im.draggable = false;
+    im.style.cssText = `position:absolute;left:${t.left}px;top:${t.top}px;width:256px;height:256px`;
+    grid.appendChild(im);
+  });
+
+  const dot = document.createElement('span');
+  dot.style.cssText = `position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:9999px;border:2px solid #fff;background:${color}`;
+
+  const tag = document.createElement('span');
+  tag.textContent = 'Aerial view';
+  tag.style.cssText = 'position:absolute;left:6px;top:6px;padding:1px 6px;border-radius:6px;background:rgba(15,23,42,.8);color:#e2e8f0;font-size:9px;font-weight:700';
+
+  const credit = document.createElement('span');
+  credit.textContent = AERIAL_CREDIT;
+  credit.style.cssText = 'position:absolute;right:6px;bottom:4px;color:rgba(255,255,255,.7);font-size:8px';
+
+  box.appendChild(grid);
+  box.appendChild(dot);
+  box.appendChild(tag);
+  box.appendChild(credit);
+  return box;
+}
+
 // Built with DOM nodes + textContent so place names from OpenStreetMap can never inject HTML.
 function buildPopup(loc: LocationMarker, onJoin: () => void): HTMLElement {
   const st = STATUS_STYLE[loc.wait_status] || STATUS_STYLE.LOW_WAIT;
@@ -103,7 +142,11 @@ function buildPopup(loc: LocationMarker, onJoin: () => void): HTMLElement {
   };
   if (String(loc.id).startsWith('osm-') && !loc.banner_url) {
     fetchPlaceImage(loc.id).then((info) => {
-      if (info) photo.src = info.url;
+      if (info) {
+        photo.src = info.url;
+      } else if (AERIAL_ENABLED && Number.isFinite(Number(loc.latitude)) && Number.isFinite(Number(loc.longitude)) && photo.parentNode) {
+        photo.parentNode.replaceChild(buildAerial(Number(loc.latitude), Number(loc.longitude), st.color), photo);
+      }
     });
   }
   root.appendChild(photo);

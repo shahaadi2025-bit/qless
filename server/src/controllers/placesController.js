@@ -284,6 +284,7 @@ function addPlaceRecord(r) {
     google_place_id: null,
     travel_buffer_minutes: 15,
     banner_url: null,
+    place_type: r.type,
     media: r.media || {},
     source: 'osm',
     added_at: Date.now()
@@ -632,6 +633,31 @@ function firstImage(json) {
   return null;
 }
 
+const NAME_STOP = new Set(['the', 'of', 'and', 'in', 'at', 'for', 'shri', 'sri']);
+function nameTokens(s) {
+  return String(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0900-\u097f ]+/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 3 && !NAME_STOP.has(w));
+}
+// Every word of the place's name must appear in the page/file title (plural forms count),
+// so "Apollo Clinic" can never match "Apollo Hospitals".
+function nameMatches(title, name) {
+  const need = nameTokens(name);
+  if (need.length === 0) return false;
+  const have = nameTokens(title);
+  return need.every(w => have.some(h => h === w || h.startsWith(w)));
+}
+// Name searches are only trusted for one-of-a-kind places, not chain outlets (restaurants, banks, pharmacies...).
+const NAME_SEARCH_TYPES = new Set(['HEALTHCARE', 'RELIGIOUS', 'EDUCATION', 'GOVERNMENT', 'TRANSPORT', 'ATTRACTION', 'ENTERTAINMENT', 'LODGING', 'LEISURE']);
+function worthNameSearch(loc) {
+  return NAME_SEARCH_TYPES.has(loc.place_type) || (loc.place_type === 'SHOPPING' && /mall|market|plaza|centre|center|complex|bazaar|bazar/i.test(loc.name || ''));
+}
+function pagesByIndex(json) {
+  return Object.values((json && json.query && json.query.pages) || {}).sort((a, b) => (a.index || 0) - (b.index || 0));
+}
+
 async function resolveImage(loc) {
   const m = loc.media || {};
 
@@ -685,6 +711,36 @@ async function resolveImage(loc) {
     }
   }
 
+  // 4b) search Wikipedia and Wikimedia Commons by the place's name (well-known places with no tags)
+  if (worthNameSearch(loc)) {
+    const query = `${loc.name} ${loc.city || ''}`.trim();
+    try {
+      const j = await getJson(
+        'https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrlimit=5&prop=pageimages&piprop=thumbnail&pithumbsize=800&pilimit=5&format=json' +
+          `&gsrsearch=${encodeURIComponent(query)}`
+      );
+      const hit = pagesByIndex(j).find(p => p.thumbnail && p.thumbnail.source && nameMatches(p.title, loc.name));
+      if (hit) return { url: hit.thumbnail.source, source: 'wikipedia-search', credit: 'Photo: Wikipedia' };
+    } catch {
+      /* next source */
+    }
+    try {
+      const j = await getJson(
+        'https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrlimit=5&prop=imageinfo&iiprop=url%7Cmime&iiurlwidth=800&format=json' +
+          `&gsrsearch=${encodeURIComponent(query)}`
+      );
+      for (const p of pagesByIndex(j)) {
+        const info = p.imageinfo && p.imageinfo[0];
+        const title = String(p.title || '').replace(/^File:/i, '').replace(/\.[a-z0-9]+$/i, '');
+        if (info && /^image\/(jpeg|png|webp)$/.test(info.mime || '') && nameMatches(title, loc.name)) {
+          return { url: info.thumburl || info.url, source: 'commons-search', credit: COMMONS_CREDIT };
+        }
+      }
+    } catch {
+      /* next source */
+    }
+  }
+
   // 5) a geotagged Wikimedia Commons photo taken within 50 m
   try {
     const j = await getJson(
@@ -695,6 +751,25 @@ async function resolveImage(loc) {
     if (u) return { url: u, source: 'commons-nearby', credit: COMMONS_CREDIT };
   } catch {
     /* next source */
+  }
+
+  // 5b) big venues (hospitals, colleges, stations, temples...): a geotagged photo within 150 m whose name matches
+  if (NAME_SEARCH_TYPES.has(loc.place_type)) {
+    try {
+      const j = await getJson(
+        'https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggsnamespace=6&ggsradius=150&ggslimit=10' +
+          `&ggscoord=${loc.latitude}%7C${loc.longitude}&prop=imageinfo&iiprop=url%7Cmime&iiurlwidth=800&format=json`
+      );
+      for (const p of pagesByIndex(j)) {
+        const info = p.imageinfo && p.imageinfo[0];
+        const title = String(p.title || '').replace(/^File:/i, '').replace(/\.[a-z0-9]+$/i, '');
+        if (info && /^image\/(jpeg|png|webp)$/.test(info.mime || '') && nameMatches(title, loc.name)) {
+          return { url: info.thumburl || info.url, source: 'commons-nearby', credit: COMMONS_CREDIT };
+        }
+      }
+    } catch {
+      /* next source */
+    }
   }
 
   // 6) a street-level photo from Mapillary (free token from mapillary.com/developer)

@@ -2,9 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { fetchPlaceImage } from '../placeImages.ts';
 import type { PlaceImageInfo } from '../placeImages.ts';
 import { venueArtDataUri } from '../venueArt.ts';
+import { AERIAL_ENABLED } from '../aerial.ts';
+import { AerialView } from './AerialView.tsx';
 
 interface PlaceImgProps {
-  loc: { id: string; category: string; banner_url?: string | null };
+  loc: { id: string; category: string; banner_url?: string | null; latitude?: number; longitude?: number };
   /** Picture to show until a real photo is found (the venue banner or category artwork). */
   src: string;
   alt: string;
@@ -12,20 +14,29 @@ interface PlaceImgProps {
   showCredit?: boolean;
 }
 
-// Shows a real photo of the place when one can be found, otherwise the artwork.
+// Shows a real photo of the place when one can be found. If there is none, it shows an aerial view of the
+// place (when coordinates are known), and category artwork only as the last resort.
 // The lookup only starts when the picture is close to the screen.
 export const PlaceImg: React.FC<PlaceImgProps> = ({ loc, src, alt, className, showCredit = true }) => {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [info, setInfo] = useState<PlaceImageInfo | null>(null);
   const [broken, setBroken] = useState(false);
+  const [noPhoto, setNoPhoto] = useState(false);
+  const [aerialFailed, setAerialFailed] = useState(false);
   const wantsLookup = loc.id.startsWith('osm-') && !loc.banner_url;
+
+  const lat = Number(loc.latitude);
+  const lng = Number(loc.longitude);
+  const canAerial = AERIAL_ENABLED && Number.isFinite(lat) && Number.isFinite(lng) && !aerialFailed;
 
   useEffect(() => {
     if (!wantsLookup) return;
     let cancelled = false;
     const load = () => {
       fetchPlaceImage(loc.id).then((r) => {
-        if (!cancelled && r) setInfo(r);
+        if (cancelled) return;
+        if (r) setInfo(r);
+        else setNoPhoto(true);
       });
     };
     const el = imgRef.current;
@@ -50,6 +61,19 @@ export const PlaceImg: React.FC<PlaceImgProps> = ({ loc, src, alt, className, sh
       obs.disconnect();
     };
   }, [loc.id, wantsLookup]);
+
+  // No photo anywhere: show the satellite view of the place.
+  if (wantsLookup && noPhoto && !info && canAerial) {
+    return (
+      <AerialView
+        lat={lat}
+        lng={lng}
+        className={className}
+        showLabels={showCredit}
+        onFail={() => setAerialFailed(true)}
+      />
+    );
+  }
 
   const shown = broken ? venueArtDataUri(loc.category) : info ? info.url : src;
 
