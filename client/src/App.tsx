@@ -11,6 +11,11 @@ import { BusinessAnalytics } from './components/BusinessAnalytics.tsx';
 import { useSocket } from './context/SocketContext.tsx';
 import { Database, HelpCircle, Sparkles, ExternalLink, Code2 } from 'lucide-react';
 import { apiFetch } from './config.ts';
+import { AccountProvider } from './context/AccountContext.tsx';
+import { LandingPage } from './components/LandingPage.tsx';
+import { PricingPage } from './components/PricingPage.tsx';
+import { AccountPage } from './components/AccountPage.tsx';
+import { BoostCard } from './components/BoostCard.tsx';
 import { AuroraBackground } from './components/AuroraBackground.tsx';
 import { LocationPicker } from './components/LocationPicker.tsx';
 
@@ -23,8 +28,8 @@ const capPerCategory = (rows: any[], perCategory = 24): any[] => {
   });
 };
 
-export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('explore');
+const AppInner: React.FC = () => {
+  const [activeTab, setActiveTab] = useState('home');
   const [locations, setLocations] = useState<any[]>([]);
   const [activeToken, setActiveToken] = useState<any>({
     id: 'tok-001',
@@ -188,9 +193,30 @@ export const App: React.FC = () => {
           </div>
         )}
 
+        {activeTab === 'home' && (
+          <LandingPage
+            onFindQueue={() => setActiveTab('explore')}
+            onPricing={() => setActiveTab('pricing')}
+            onForBusinesses={() => setActiveTab('pricing')}
+          />
+        )}
+
+        {activeTab === 'pricing' && (
+          <div className="py-4">
+            <PricingPage />
+          </div>
+        )}
+
+        {activeTab === 'account' && (
+          <div className="py-4">
+            <AccountPage onGoPricing={() => setActiveTab('pricing')} />
+          </div>
+        )}
+
         {/* Live Customer Token Passport */}
         {activeTab === 'tracker' && (
           <div className="py-4">
+            <BoostCard token={activeToken} />
             <LiveTokenTracker
               tokenData={activeToken}
               onExploreMore={() => setActiveTab('explore')}
@@ -333,3 +359,9 @@ FROM v_live_queue_metrics;`}
     </div>
   );
 };
+
+export const App: React.FC = () => (
+  <AccountProvider>
+    <AppInner />
+  </AccountProvider>
+);

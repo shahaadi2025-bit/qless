@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useSocket } from '../context/SocketContext.tsx';
+import { AccountMenu } from './AccountMenu.tsx';
+import { Home as HomeIcon, IndianRupee } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: string;
@@ -51,6 +53,18 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, activeT
 
         {/* Navigation Tabs */}
         <nav className="hidden md:flex items-center gap-1.5 p-1 rounded-xl bg-dark-900/80 border border-white/5">
+          <button
+            onClick={() => setActiveTab('home')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === 'home'
+                ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25'
+                : 'text-slate-300 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <HomeIcon className="w-4 h-4" />
+            Home
+          </button>
+
           <button
             onClick={() => setActiveTab('explore')}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -113,10 +127,22 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, activeT
             <BarChart3 className="w-4 h-4" />
             Analytics & Payouts
           </button>
+          <button
+            onClick={() => setActiveTab('pricing')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === 'pricing'
+                ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25'
+                : 'text-slate-300 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <IndianRupee className="w-4 h-4" />
+            Pricing
+          </button>
         </nav>
 
         {/* Live Status & Role Switcher */}
         <div className="flex items-center gap-3">
+          <AccountMenu setActiveTab={setActiveTab} />
           {/* Socket Indicator */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-dark-900 border border-white/10 text-[11px] font-mono">
             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 beacon-live' : 'bg-amber-400'}`}></span>
@@ -164,6 +190,18 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, activeT
 
       {/* Mobile Tab Bar */}
       <div className="flex md:hidden items-center justify-around gap-1 mt-2.5 pt-2 border-t border-white/10 overflow-x-auto text-[11px]">
+        <button
+          onClick={() => setActiveTab('home')}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-md ${activeTab === 'home' ? 'text-brand-400 font-bold' : 'text-slate-400'}`}
+        >
+          <HomeIcon className="w-3.5 h-3.5" /> Home
+        </button>
+        <button
+          onClick={() => setActiveTab('pricing')}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-md ${activeTab === 'pricing' ? 'text-brand-400 font-bold' : 'text-slate-400'}`}
+        >
+          <IndianRupee className="w-3.5 h-3.5" /> Pricing
+        </button>
         <button
           onClick={() => setActiveTab('explore')}
           className={`flex items-center gap-1 px-2.5 py-1 rounded-md ${activeTab === 'explore' ? 'text-brand-400 font-bold' : 'text-slate-400'}`}

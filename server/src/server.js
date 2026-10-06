@@ -12,10 +12,14 @@ import queueRoutes from './routes/queueRoutes.js';
 import counterRoutes from './routes/counterRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import placesRoutes from './routes/placesRoutes.js';
+import accountRoutes from './routes/accountRoutes.js';
+import billingRoutes from './routes/billingRoutes.js';
+import { initKv } from './lib/kv.js';
 
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1); // real visitor IPs behind Render's proxy (used by the rate limits)
 const server = http.createServer(app);
 
 const PORT = process.env.PORT || 5000;
@@ -54,6 +58,8 @@ app.use('/api/queue', queueRoutes);
 app.use('/api/counter', counterRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/places', placesRoutes);
+app.use('/api/account', accountRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Friendly root + health checks (Render and uptime monitors use these)
 app.get('/', (req, res) => {
@@ -75,6 +81,7 @@ app.get('/health', healthHandler);
 // Initialize database pool and start server
 async function bootstrap() {
   await initDbPool();
+  await initKv();
 
   server.listen(PORT, () => {
     console.log('\n======================================================');

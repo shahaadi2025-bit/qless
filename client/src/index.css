@@ -135,3 +135,58 @@
 @media (prefers-reduced-motion: reduce) {
   .aurora-blob, .text-shimmer, .ring-pulse::before { animation: none !important; }
 }
+
+/* ===== QLESS accounts + landing animations ===== */
+.reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal-in {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes qless-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.marquee-track {
+  animation: qless-marquee 38s linear infinite;
+}
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes qless-bar {
+  from { transform: scaleY(0.35); }
+  to { transform: scaleY(1); }
+}
+.bar-grow {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: qless-bar 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes qless-draw {
+  to { stroke-dashoffset: 0; }
+}
+.draw-circle {
+  stroke-dasharray: 160;
+  stroke-dashoffset: 160;
+  animation: qless-draw 0.6s ease-out forwards;
+}
+.draw-check {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: qless-draw 0.5s 0.45s ease-out forwards;
+}
+
+.float-slow {
+  animation: qless-float 9s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .marquee-track, .bar-grow, .float-slow { animation: none !important; }
+}
