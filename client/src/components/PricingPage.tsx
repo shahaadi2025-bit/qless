@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Sparkles, Loader2, ShieldCheck } from 'lucide-react';
+import { Check, Sparkles, ShieldCheck } from 'lucide-react';
 import { apiFetch } from '../config.ts';
 import { useAccount } from '../context/AccountContext.tsx';
 
@@ -113,7 +113,19 @@ export const PricingPage: React.FC = () => {
 
       {error && <p className="text-center text-sm text-rose-400">{error}</p>}
       {!error && plans.length === 0 && (
-        <div className="flex justify-center py-10 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /></div>
+        <div className="grid gap-5 md:grid-cols-3" aria-hidden="true">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rounded-3xl bg-dark-900 border border-white/10 p-6 space-y-4">
+              <div className="skeleton h-5 w-24 rounded-lg" />
+              <div className="skeleton h-3 w-40 rounded-lg" />
+              <div className="skeleton h-10 w-28 rounded-lg" />
+              <div className="space-y-2.5 pt-2">
+                {[0, 1, 2, 3].map((j) => <div key={j} className="skeleton h-3 w-full rounded-lg" />)}
+              </div>
+              <div className="skeleton h-11 w-full rounded-xl" />
+            </div>
+          ))}
+        </div>
       )}
 
       <div className="grid gap-5 md:grid-cols-3">

@@ -17,6 +17,8 @@ import { PricingPage } from './components/PricingPage.tsx';
 import { AccountPage } from './components/AccountPage.tsx';
 import { BoostCard } from './components/BoostCard.tsx';
 import { AuroraBackground } from './components/AuroraBackground.tsx';
+import { CursorGlow } from './components/CursorGlow.tsx';
+import { ScrollProgress } from './components/ScrollProgress.tsx';
 import { LocationPicker } from './components/LocationPicker.tsx';
 
 // Keep the list manageable when many nearby places are discovered: nearest N per category.
@@ -119,6 +121,8 @@ const AppInner: React.FC = () => {
   return (
     <div className="relative isolate min-h-screen bg-dark-950 text-slate-100 flex flex-col selection:bg-brand-500/30 selection:text-brand-300">
       <AuroraBackground />
+      <CursorGlow />
+      <ScrollProgress />
       {/* Top Navigation */}
       <Navbar
         activeTab={activeTab}
@@ -127,7 +131,7 @@ const AppInner: React.FC = () => {
       />
 
       {/* Main Content View Switcher */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+      <main key={activeTab} className="page-enter flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
         {activeTab === 'explore' && (
           <div className="space-y-12">
             {/* Hero Experience (Stop Waiting. Start Moving.) */}

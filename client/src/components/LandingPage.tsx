@@ -23,6 +23,7 @@ import {
   MapPin
 } from 'lucide-react';
 import { useAccount } from '../context/AccountContext.tsx';
+import { QueueSimulator } from './QueueSimulator.tsx';
 
 interface LandingPageProps {
   onFindQueue: () => void;
@@ -106,6 +107,39 @@ const CountUp: React.FC<{ to: number; prefix?: string; suffix?: string }> = ({ t
     </span>
   );
 };
+
+// Tilts its content gently towards the mouse (mouse only, and not for people who prefer reduced motion).
+const TiltCard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = ref.current;
+    if (!el || e.pointerType !== 'mouse') return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5;
+    const py = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = `perspective(900px) rotateY(${px * 10}deg) rotateX(${-py * 8}deg)`;
+  };
+  const reset = () => {
+    if (ref.current) ref.current.style.transform = '';
+  };
+  return (
+    <div ref={ref} onPointerMove={onMove} onPointerLeave={reset} className="tilt-card">
+      {children}
+    </div>
+  );
+};
+
+const ACTIVITY = [
+  'Token A-021 called to Counter 2',
+  'Cafe table for 4 is ready',
+  'OPD wait dropped to 9 min',
+  'Darshan line: about 38 min',
+  'Priority boost applied on B-017',
+  'New place added: Metro Pharmacy',
+  'Salon queue is clear right now',
+  'Bank counter 3 is free'
+];
 
 // ---------- hero artwork: animated phone with a live token ----------
 const HeroPhone: React.FC = () => (
@@ -266,6 +300,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onFindQueue, onPricing
     <div className="space-y-24 pb-8">
       {/* Hero */}
       <section className="relative grid lg:grid-cols-2 gap-10 items-center pt-6">
+        <div className="hero-mesh absolute -inset-x-6 -top-10 bottom-0 -z-10 rounded-[3rem] opacity-70" aria-hidden="true" />
         <div className="space-y-6 text-center lg:text-left">
           <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full glass-panel border border-brand-500/30 text-xs font-semibold text-slate-200">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" /> Live queues, right in your browser
@@ -299,7 +334,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onFindQueue, onPricing
         </div>
         <div className="relative">
           <div className="absolute inset-0 -z-10 bg-brand-500/10 blur-[110px] rounded-full" />
-          <HeroPhone />
+          <TiltCard>
+            <HeroPhone />
+          </TiltCard>
         </div>
       </section>
 
@@ -309,6 +346,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onFindQueue, onPricing
           {[...VENUES, ...VENUES].map((v, i) => (
             <span key={i} className="flex items-center gap-2.5 text-sm font-semibold text-slate-300 whitespace-nowrap">
               <v.icon className="w-5 h-5 text-brand-400" /> {v.label}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      {/* Example activity ticker */}
+      <section className="-mt-14 overflow-hidden" aria-label="Example queue activity">
+        <p className="text-center text-[10px] uppercase tracking-widest text-slate-500 mb-3">Example activity</p>
+        <div className="marquee-track flex gap-4 w-max" style={{ animationDuration: '55s', animationDirection: 'reverse' }}>
+          {[...ACTIVITY, ...ACTIVITY].map((a, i) => (
+            <span key={i} className="flex items-center gap-2 px-4 py-2 rounded-full glass-card border border-white/10 text-xs text-slate-300 whitespace-nowrap">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 beacon-live" /> {a}
             </span>
           ))}
         </div>
@@ -355,6 +404,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onFindQueue, onPricing
             </Reveal>
           ))}
         </div>
+      </section>
+
+      {/* Try it */}
+      <section className="space-y-6">
+        <Reveal>
+          <div className="text-center space-y-2">
+            <h2 className="text-3xl sm:text-4xl font-black text-white">Try it yourself</h2>
+            <p className="text-sm text-slate-400">A tiny queue. You are the green token. Call the next person, or boost to move up.</p>
+          </div>
+        </Reveal>
+        <Reveal delay={100}>
+          <QueueSimulator />
+        </Reveal>
       </section>
 
       {/* Features */}
@@ -478,7 +540,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onFindQueue, onPricing
       </section>
 
       {/* Final CTA */}
-      <section className="relative overflow-hidden rounded-3xl p-10 sm:p-14 text-center bg-gradient-to-br from-emerald-700 via-brand-600 to-teal-700">
+      <section className="gradient-border-anim relative overflow-hidden rounded-3xl p-10 sm:p-14 text-center bg-gradient-to-br from-emerald-700 via-brand-600 to-teal-700">
         <div className="absolute -top-10 -left-10 w-56 h-56 rounded-full bg-white/10 float-slow" />
         <div className="absolute -bottom-16 -right-10 w-72 h-72 rounded-full bg-black/10 float-slow" style={{ animationDelay: '2s' }} />
         <div className="relative space-y-5">

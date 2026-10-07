@@ -30,6 +30,7 @@ export interface SignUpInput {
   password: string;
   role: 'CUSTOMER' | 'BUSINESS';
   businessName?: string;
+  adminKey?: string;
 }
 
 export interface CallResult {
@@ -48,6 +49,7 @@ interface AccountContextType {
   openAuth: (mode?: 'signin' | 'signup') => void;
   startCheckout: (req: CheckoutRequest, onDone?: () => void) => void;
   call: (path: string, init?: { method?: string; body?: unknown }) => Promise<CallResult>;
+  toast: (text: string, kind?: 'success' | 'error' | 'info') => void;
 }
 
 const TOKEN_KEY = 'qless:token';
@@ -71,6 +73,13 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [loading, setLoading] = useState<boolean>(Boolean(token));
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | null>(null);
   const [checkout, setCheckout] = useState<{ req: CheckoutRequest; onDone?: () => void } | null>(null);
+  const [toasts, setToasts] = useState<Array<{ id: number; text: string; kind: 'success' | 'error' | 'info' }>>([]);
+
+  const toast = useCallback((text: string, kind: 'success' | 'error' | 'info' = 'success') => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t.slice(-2), { id, text, kind }]);
+    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3800);
+  }, []);
 
   const saveToken = useCallback((t: string | null) => {
     setToken(t);
@@ -141,11 +150,12 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
         saveToken(r.json.data.token);
         setAccount(r.json.data.account);
         setAuthMode(null);
+        toast(`Welcome, ${String(r.json.data.account.name || '').split(' ')[0] || 'there'}!`);
         return null;
       }
       return (r.json && r.json.message) || 'Something went wrong. Please try again.';
     },
-    [call, saveToken]
+    [call, saveToken, toast]
   );
 
   const signIn = useCallback((email: string, password: string) => authenticate('/api/account/login', { email, password }), [authenticate]);
@@ -156,7 +166,8 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
         email: input.email,
         password: input.password,
         role: input.role,
-        business_name: input.businessName || ''
+        business_name: input.businessName || '',
+        admin_key: input.adminKey || ''
       }),
     [authenticate]
   );
@@ -164,7 +175,8 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const signOut = useCallback(() => {
     saveToken(null);
     setAccount(null);
-  }, [saveToken]);
+    toast('You are signed out', 'info');
+  }, [saveToken, toast]);
 
   const openAuth = useCallback((mode: 'signin' | 'signup' = 'signin') => setAuthMode(mode), []);
 
@@ -180,13 +192,29 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 
   const value = useMemo<AccountContextType>(
-    () => ({ account, loading, signIn, signUp, signOut, refresh, openAuth, startCheckout, call }),
-    [account, loading, signIn, signUp, signOut, refresh, openAuth, startCheckout, call]
+    () => ({ account, loading, signIn, signUp, signOut, refresh, openAuth, startCheckout, call, toast }),
+    [account, loading, signIn, signUp, signOut, refresh, openAuth, startCheckout, call, toast]
   );
 
   return (
     <AccountContext.Provider value={value}>
       {children}
+      <div className="fixed top-20 right-4 z-[95] space-y-2 pointer-events-none" aria-live="polite">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`toast-in pointer-events-auto px-4 py-2.5 rounded-xl text-xs font-bold shadow-2xl border backdrop-blur-md ${
+              t.kind === 'error'
+                ? 'bg-rose-500/15 border-rose-500/40 text-rose-100'
+                : t.kind === 'info'
+                ? 'bg-sky-500/15 border-sky-500/40 text-sky-100'
+                : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-100'
+            }`}
+          >
+            {t.text}
+          </div>
+        ))}
+      </div>
       {authMode && <AuthModal mode={authMode} setMode={setAuthMode} onClose={() => setAuthMode(null)} />}
       {checkout && (
         <CheckoutModal

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import * as QRCode from 'qrcode';
+import confetti from 'canvas-confetti';
 import { X, Loader2, Smartphone, CreditCard, FlaskConical, Copy, CheckCircle2, ShieldCheck, Clock } from 'lucide-react';
 import { useAccount } from '../context/AccountContext.tsx';
 import type { CheckoutRequest } from '../context/AccountContext.tsx';
@@ -13,6 +14,10 @@ interface CheckoutModalProps {
 type Method = 'razorpay' | 'upi' | 'demo';
 const RUPEE = '\u20B9';
 
+function celebrate() {
+  confetti({ particleCount: 110, spread: 75, origin: { y: 0.7 }, disableForReducedMotion: true });
+}
+
 function loadRazorpay(): Promise<boolean> {
   return new Promise((resolve) => {
     if ((window as any).Razorpay) return resolve(true);
@@ -25,7 +30,7 @@ function loadRazorpay(): Promise<boolean> {
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ request, onClose, onDone }) => {
-  const { account, call, refresh } = useAccount();
+  const { account, call, refresh, toast } = useAccount();
   const [phase, setPhase] = useState<'loading' | 'choose' | 'review' | 'done' | 'error'>('loading');
   const [data, setData] = useState<any>(null);
   const [method, setMethod] = useState<Method>('demo');
@@ -34,6 +39,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ request, onClose, 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
 
   // Ask the server to prepare the payment. The price is decided on the server, not here.
   useEffect(() => {
@@ -52,6 +65,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ request, onClose, 
       if (r.json.data.activated) {
         await refresh();
         setPhase('done');
+        celebrate();
+        toast('Plan switched');
         if (onDone) onDone();
         return;
       }
@@ -88,6 +103,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ request, onClose, 
   const finish = async () => {
     await refresh();
     setPhase('done');
+    celebrate();
+    toast(request.kind === 'BOOST' ? 'Priority boost applied' : 'Payment received. Your plan is active.');
     if (onDone) onDone();
   };
 
